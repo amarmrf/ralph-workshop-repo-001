@@ -1,10 +1,13 @@
 #!/bin/bash
-set -e
 
-if [ -z "$1" ]; then
+set -euo pipefail
+
+if [ -z "${1:-}" ]; then
   echo "Usage: $0 <iterations>"
   exit 1
 fi
+
+repo_root=$(cd "$(dirname "$0")/.." && pwd)
 
 # jq filter to extract streaming text from assistant messages
 stream_text='select(.type == "assistant").message.content[]? | select(.type == "text").text // empty | gsub("\n"; "\r\n") | . + "\r\n\n"'
@@ -14,12 +17,12 @@ final_result='select(.type == "result").result // empty'
 
 for ((i=1; i<=$1; i++)); do
   tmpfile=$(mktemp)
-  trap "rm -f $tmpfile" EXIT
+  trap 'rm -f "$tmpfile"' EXIT
   echo "------- ITERATION $i --------"
 
-  ralph_commits=$(git log --grep="RALPH" -n 10 --format="%H%n%ad%n%B---" --date=short 2>/dev/null || echo "No RALPH commits found")
+  ralph_commits=$(git -C "$repo_root" log --grep="RALPH" -n 10 --format="%H%n%ad%n%B---" --date=short 2>/dev/null || echo "No RALPH commits found")
 
-  docker sandbox run claude . -- \
+  claude \
     --verbose \
     --print \
     --output-format stream-json \
@@ -39,4 +42,7 @@ for ((i=1; i<=$1; i++)); do
     echo "Ralph aborted after $i iterations."
     exit 1
   fi
+
+  rm -f "$tmpfile"
+  trap - EXIT
 done
